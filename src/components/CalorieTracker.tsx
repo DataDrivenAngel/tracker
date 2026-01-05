@@ -281,6 +281,9 @@ export default function CalorieTracker() {
     labels.unshift("Start");
     dataPoints.unshift(0);
 
+    const green = "rgb(34, 197, 94)";
+    const yellow = "rgb(234, 179, 8)";
+
     return {
       labels,
       datasets: [
@@ -296,7 +299,7 @@ export default function CalorieTracker() {
         {
           label: "Maintenance",
           data: new Array(labels.length).fill(targets.maintenance),
-          borderColor: "rgb(34, 197, 94)",
+          borderColor: selectedTarget === "maintenance" ? green : yellow,
           borderDash: [5, 5],
           pointRadius: 0,
           fill: false,
@@ -305,7 +308,7 @@ export default function CalorieTracker() {
         {
           label: "1 lb per week",
           data: new Array(labels.length).fill(targets.oneLb),
-          borderColor: "rgb(234, 179, 8)",
+          borderColor: selectedTarget === "oneLb" ? green : yellow,
           borderDash: [5, 5],
           pointRadius: 0,
           fill: false,
@@ -314,7 +317,7 @@ export default function CalorieTracker() {
         {
           label: "2 lb per week",
           data: new Array(labels.length).fill(targets.twoLb),
-          borderColor: "rgb(239, 68, 68)",
+          borderColor: selectedTarget === "twoLb" ? green : yellow,
           borderDash: [5, 5],
           pointRadius: 0,
           fill: false,
@@ -322,7 +325,7 @@ export default function CalorieTracker() {
         },
       ],
     };
-  }, [items, targets]);
+  }, [items, targets, selectedTarget]);
 
   const chartOptions = {
     responsive: true,
