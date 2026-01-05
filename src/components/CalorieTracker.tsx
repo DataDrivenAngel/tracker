@@ -357,6 +357,50 @@ export default function CalorieTracker() {
       }, [selectedTarget]);
     
       const chartData = useMemo(() => {
+    if (items.length === 0) {
+      return {
+        labels: ["Start"],
+        datasets: [
+          {
+            label: "Calories",
+            data: [0],
+            borderColor: "rgb(37, 99, 235)",
+            backgroundColor: "rgba(37, 99, 235, 0.1)",
+            fill: true,
+            tension: 0.4,
+            order: 1,
+          },
+          {
+            label: "Maintenance",
+            data: [targets.maintenance],
+            borderColor: "rgb(234, 179, 8)",
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false,
+            order: 2,
+          },
+          {
+            label: "1 lb per week",
+            data: [targets.oneLb],
+            borderColor: "rgb(234, 179, 8)",
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false,
+            order: 3,
+          },
+          {
+            label: "2 lb per week",
+            data: [targets.twoLb],
+            borderColor: "rgb(234, 179, 8)",
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false,
+            order: 4,
+          },
+        ],
+      };
+    }
+
     const sortedItems = [...items].sort((a, b) => a.timestamp - b.timestamp);
     let cumulative = 0;
     const dataPoints = sortedItems.map((item) => {
