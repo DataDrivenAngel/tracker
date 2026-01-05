@@ -133,6 +133,9 @@ export default function CalorieTracker() {
   const [showDailyChart, setShowDailyChart] = useState(false);
   const [isDataMenuOpen, setIsDataMenuOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCalories, setEditCalories] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dataMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -200,6 +203,33 @@ export default function CalorieTracker() {
 
   const removeItem = (id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const startEdit = (item: CalorieItem) => {
+    setEditingId(item.id);
+    setEditName(item.name);
+    setEditCalories(item.calories.toString());
+  };
+
+  const saveEdit = (id: string) => {
+    if (!editCalories.trim()) return;
+
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, name: editName || "Unnamed Item", calories: parseInt(editCalories) }
+          : item
+      )
+    );
+    setEditingId(null);
+    setEditName("");
+    setEditCalories("");
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditName("");
+    setEditCalories("");
   };
 
   const totalCalories = items.reduce((sum, item) => sum + item.calories, 0);
@@ -800,20 +830,80 @@ export default function CalorieTracker() {
                 key={item.id}
                 className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-100 group animate-in fade-in slide-in-from-top-2 duration-300"
               >
-                <div>
-                  <h3 className="font-medium text-gray-900">{item.name}</h3>
-                  <p className="text-sm text-gray-500">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="font-bold text-lg text-gray-900">{item.calories} <span className="text-xs font-normal text-gray-400">kcal</span></span>
-                  <button
-                    onClick={() => removeItem(item.id)}
-                    className="text-gray-300 hover:text-red-500 transition-colors p-1"
-                    aria-label="Remove item"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
-                  </button>
-                </div>
+                {editingId === item.id ? (
+                  <>
+                    <div className="flex-1 mr-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          placeholder="Food item name"
+                          className="px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        />
+                        <input
+                          type="number"
+                          value={editCalories}
+                          onChange={(e) => setEditCalories(e.target.value)}
+                          placeholder="Calories"
+                          className="px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          required
+                        />
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => saveEdit(item.id)}
+                        className="text-green-600 hover:text-green-700 transition-colors p-1"
+                        aria-label="Save edit"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20,6 9,17 4,12"></polyline>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+                        aria-label="Cancel edit"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <h3 className="font-medium text-gray-900">{item.name}</h3>
+                      <p className="text-sm text-gray-500">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold text-lg text-gray-900">{item.calories} <span className="text-xs font-normal text-gray-400">kcal</span></span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => startEdit(item)}
+                          className="text-gray-300 hover:text-blue-500 transition-colors p-1"
+                          aria-label="Edit item"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => removeItem(item.id)}
+                          className="text-gray-300 hover:text-red-500 transition-colors p-1"
+                          aria-label="Remove item"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
