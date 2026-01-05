@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -38,6 +38,89 @@ interface Targets {
   twoLb: number;
 }
 
+function escapeCsvField(value: string): string {
+  // RFC4180-ish escaping: wrap in quotes if needed, and escape quotes by doubling.
+  const needsQuotes = /[\n\r",]/.test(value);
+  if (!needsQuotes) return value;
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function toCsv(rows: string[][]): string {
+  return rows.map((row) => row.map(escapeCsvField).join(",")).join("\n");
+}
+
+function parseCsv(text: string): string[][] {
+  // Minimal CSV parser with support for quoted fields and commas/newlines inside quotes.
+  // Returns rows of fields; empty trailing row is removed.
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  const pushField = () => {
+    row.push(field);
+    field = "";
+  };
+  const pushRow = () => {
+    // Avoid pushing a completely empty trailing row.
+    if (row.length === 1 && row[0] === "" && rows.length > 0) {
+      row = [];
+      return;
+    }
+    rows.push(row);
+    row = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        const next = text[i + 1];
+        if (next === '"') {
+          field += '"';
+          i++; // skip escaped quote
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === ",") {
+      pushField();
+      continue;
+    }
+    if (ch === "\n") {
+      pushField();
+      pushRow();
+      continue;
+    }
+    if (ch === "\r") {
+      // Handle CRLF
+      const next = text[i + 1];
+      if (next === "\n") i++;
+      pushField();
+      pushRow();
+      continue;
+    }
+
+    field += ch;
+  }
+
+  // Flush final field/row.
+  pushField();
+  if (row.length > 1 || row[0] !== "") pushRow();
+
+  return rows;
+}
+
 export default function CalorieTracker() {
   const [items, setItems] = useState<CalorieItem[]>([]);
   const [name, setName] = useState("");
@@ -45,6 +128,10 @@ export default function CalorieTracker() {
   const [weight, setWeight] = useState<string>("180");
   const [selectedTarget, setSelectedTarget] = useState<keyof Targets>("maintenance");
   const [showSettings, setShowSettings] = useState(false);
+  const [isDataMenuOpen, setIsDataMenuOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dataMenuRef = useRef<HTMLDivElement | null>(null);
 
   const targets = useMemo((): Targets => {
     const w = parseFloat(weight) || 0;
@@ -82,25 +169,102 @@ export default function CalorieTracker() {
   const totalCalories = items.reduce((sum, item) => sum + item.calories, 0);
 
   const exportToCSV = () => {
+    setImportStatus(null);
     const headers = ["Name", "Calories", "Time"];
     const rows = items.map((item) => [
       item.name,
-      item.calories,
-      new Date(item.timestamp).toLocaleString(),
+      String(item.calories),
+      // ISO 8601 is stable and importable across locales.
+      new Date(item.timestamp).toISOString(),
     ]);
 
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers, ...rows].map((e) => e.join(",")).join("\n");
+    const csvBody = toCsv([headers, ...rows]);
+    const blob = new Blob([csvBody], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
 
-    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `calorie_log_${new Date().toISOString().split('T')[0]}.csv`);
+    link.href = url;
+    link.download = `calorie_log_${new Date().toISOString().split("T")[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
+
+  const importFromCSV = async (file: File) => {
+    setImportStatus(null);
+    const text = await file.text();
+    const rows = parseCsv(text);
+
+    if (rows.length < 2) {
+      throw new Error("CSV must include a header row and at least one data row.");
+    }
+
+    const header = rows[0].map((h) => h.trim().toLowerCase());
+    const nameIdx = header.indexOf("name");
+    const caloriesIdx = header.indexOf("calories");
+    const timeIdx = header.indexOf("time");
+
+    if (nameIdx === -1 || caloriesIdx === -1 || timeIdx === -1) {
+      throw new Error("CSV header must include: Name, Calories, Time");
+    }
+
+    const nextItems: CalorieItem[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      // Skip totally empty rows.
+      if (row.every((cell) => cell.trim() === "")) continue;
+
+      const rawName = (row[nameIdx] ?? "").trim();
+      const rawCalories = (row[caloriesIdx] ?? "").trim();
+      const rawTime = (row[timeIdx] ?? "").trim();
+
+      const caloriesValue = Number.parseInt(rawCalories, 10);
+      if (!Number.isFinite(caloriesValue)) {
+        throw new Error(`Invalid Calories value on row ${i + 1}: ${rawCalories}`);
+      }
+
+      const parsedTime = new Date(rawTime).getTime();
+      if (!Number.isFinite(parsedTime)) {
+        throw new Error(`Invalid Time value on row ${i + 1}: ${rawTime}`);
+      }
+
+      nextItems.push({
+        id: crypto.randomUUID(),
+        name: rawName || "Unnamed Item",
+        calories: caloriesValue,
+        timestamp: parsedTime,
+      });
+    }
+
+    // Keep chronological order in storage.
+    nextItems.sort((a, b) => a.timestamp - b.timestamp);
+    setItems(nextItems);
+    setImportStatus(`Imported ${nextItems.length} item${nextItems.length === 1 ? "" : "s"} from CSV.`);
+  };
+
+  useEffect(() => {
+    if (!isDataMenuOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsDataMenuOpen(false);
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (dataMenuRef.current && !dataMenuRef.current.contains(target)) {
+        setIsDataMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [isDataMenuOpen]);
 
   const chartData = useMemo(() => {
     const sortedItems = [...items].sort((a, b) => a.timestamp - b.timestamp);
@@ -191,13 +355,93 @@ export default function CalorieTracker() {
           <p className="text-gray-500 mt-1">Keep track of your daily intake</p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={exportToCSV}
-            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-            title="Export to CSV"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-          </button>
+          <div className="relative" ref={dataMenuRef}>
+            <button
+              onClick={() => {
+                setImportStatus(null);
+                setIsDataMenuOpen((v) => !v);
+              }}
+              className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              aria-haspopup="menu"
+              aria-expanded={isDataMenuOpen}
+              title="Import/Export"
+            >
+              {/* Hamburger icon */}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="4" x2="20" y1="6" y2="6" />
+                <line x1="4" x2="20" y1="12" y2="12" />
+                <line x1="4" x2="20" y1="18" y2="18" />
+              </svg>
+            </button>
+
+            {isDataMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Import/Export menu"
+                className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden z-10"
+              >
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    exportToCSV();
+                    setIsDataMenuOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Export to CSV
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    // Import replaces current items (with confirmation if needed)
+                    if (items.length > 0) {
+                      const ok = window.confirm(
+                        "Importing will replace your current log. Continue?"
+                      );
+                      if (!ok) {
+                        setIsDataMenuOpen(false);
+                        return;
+                      }
+                    }
+                    fileInputRef.current?.click();
+                    setIsDataMenuOpen(false);
+                  }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Import from CSV
+                </button>
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                // Allow re-selecting the same file later.
+                e.target.value = "";
+                if (!file) return;
+                try {
+                  await importFromCSV(file);
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : "Failed to import CSV.";
+                  setImportStatus(message);
+                }
+              }}
+            />
+          </div>
           <button
             onClick={() => setShowSettings(!showSettings)}
             className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -207,6 +451,18 @@ export default function CalorieTracker() {
           </button>
         </div>
       </header>
+
+      {importStatus && (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            importStatus.startsWith("Imported")
+              ? "border-green-200 bg-green-50 text-green-800"
+              : "border-red-200 bg-red-50 text-red-800"
+          }`}
+        >
+          {importStatus}
+        </div>
+      )}
 
       {showSettings && (
         <section className="bg-blue-50 p-6 rounded-xl border border-blue-100 animate-in slide-in-from-top-2 duration-200 space-y-6">
