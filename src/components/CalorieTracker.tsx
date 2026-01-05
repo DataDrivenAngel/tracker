@@ -13,7 +13,7 @@ import {
   Legend,
   Filler,
 } from "chart.js";
-import { Line, Bar } from "react-chartjs-2";
+import { Line, Bar, Chart } from "react-chartjs-2";
 
 ChartJS.register(
   CategoryScale,
@@ -880,7 +880,7 @@ export default function CalorieTracker() {
 
                   {/* Chart */}
                   <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ height: '500px' }}>
-                    <Bar data={dailyChartData.chartData} options={dailyChartOptions} />
+                    <Chart type="bar" data={dailyChartData.chartData} options={dailyChartOptions} />
                   </div>
 
                   {/* Legend Explanation */}
