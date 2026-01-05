@@ -7,18 +7,20 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
   Filler,
 } from "chart.js";
-import { Line } from "react-chartjs-2";
+import { Line, Bar } from "react-chartjs-2";
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -128,6 +130,7 @@ export default function CalorieTracker() {
   const [weight, setWeight] = useState<string>("180");
   const [selectedTarget, setSelectedTarget] = useState<keyof Targets>("maintenance");
   const [showSettings, setShowSettings] = useState(false);
+  const [showDailyChart, setShowDailyChart] = useState(false);
   const [isDataMenuOpen, setIsDataMenuOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -350,6 +353,147 @@ export default function CalorieTracker() {
     },
   };
 
+  // Calculate daily totals and statistics for the daily chart
+  const dailyChartData = useMemo(() => {
+    if (items.length === 0) {
+      return null;
+    }
+
+    // Group items by day
+    const dailyTotals = new Map<string, number>();
+    items.forEach((item) => {
+      const date = new Date(item.timestamp);
+      const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD
+      dailyTotals.set(dateKey, (dailyTotals.get(dateKey) || 0) + item.calories);
+    });
+
+    // Sort by date
+    const sortedDates = Array.from(dailyTotals.keys()).sort();
+    const dailyCalories = sortedDates.map(date => dailyTotals.get(date) || 0);
+
+    // Calculate rolling average (7-day)
+    const rollingAverage: number[] = [];
+    for (let i = 0; i < dailyCalories.length; i++) {
+      const start = Math.max(0, i - 6);
+      const window = dailyCalories.slice(start, i + 1);
+      const avg = window.reduce((sum, val) => sum + val, 0) / window.length;
+      rollingAverage.push(Math.round(avg));
+    }
+
+    // Calculate overall average
+    const totalCaloriesAllDays = dailyCalories.reduce((sum, val) => sum + val, 0);
+    const averageCalories = Math.round(totalCaloriesAllDays / dailyCalories.length);
+
+    // Calculate expected weight loss per month
+    // Weight loss = (maintenance - average) * days / 3500 calories per pound
+    const dailyDeficit = targets.maintenance - averageCalories;
+    const expectedWeightLossPerMonth = (dailyDeficit * 30) / 3500;
+
+    // Format dates for labels
+    const labels = sortedDates.map(date => {
+      const d = new Date(date);
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    });
+
+    const green = "rgb(34, 197, 94)";
+    const yellow = "rgb(234, 179, 8)";
+    const red = "rgb(239, 68, 68)";
+
+    return {
+      chartData: {
+        labels,
+        datasets: [
+          {
+            type: 'bar' as const,
+            label: 'Daily Calories',
+            data: dailyCalories,
+            backgroundColor: 'rgba(37, 99, 235, 0.6)',
+            borderColor: 'rgb(37, 99, 235)',
+            borderWidth: 1,
+            order: 2,
+          },
+          {
+            type: 'line' as const,
+            label: '7-Day Rolling Average',
+            data: rollingAverage,
+            borderColor: 'rgb(147, 51, 234)',
+            backgroundColor: 'rgba(147, 51, 234, 0.1)',
+            borderWidth: 3,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.4,
+            order: 1,
+          },
+          {
+            type: 'line' as const,
+            label: 'Maintenance',
+            data: new Array(labels.length).fill(targets.maintenance),
+            borderColor: yellow,
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            order: 3,
+          },
+          {
+            type: 'line' as const,
+            label: '1 lb/week',
+            data: new Array(labels.length).fill(targets.oneLb),
+            borderColor: green,
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            order: 4,
+          },
+          {
+            type: 'line' as const,
+            label: '2 lb/week',
+            data: new Array(labels.length).fill(targets.twoLb),
+            borderColor: red,
+            borderDash: [5, 5],
+            borderWidth: 2,
+            pointRadius: 0,
+            order: 5,
+          },
+        ],
+      },
+      averageCalories,
+      expectedWeightLossPerMonth,
+    };
+  }, [items, targets]);
+
+  const dailyChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: "top" as const,
+        labels: {
+          boxWidth: 12,
+          usePointStyle: true,
+        }
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: 'Calories',
+        }
+      },
+      x: {
+        title: {
+          display: true,
+          text: 'Date',
+        }
+      }
+    },
+  };
+
   return (
     <div className="space-y-8">
       <header className="flex items-center justify-between">
@@ -358,6 +502,28 @@ export default function CalorieTracker() {
           <p className="text-gray-500 mt-1">Keep track of your daily intake</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => setShowDailyChart(true)}
+            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            title="Daily Statistics"
+          >
+            {/* Bar chart icon */}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="12" x2="12" y1="20" y2="10" />
+              <line x1="18" x2="18" y1="20" y2="4" />
+              <line x1="6" x2="6" y1="20" y2="16" />
+            </svg>
+          </button>
           <div className="relative" ref={dataMenuRef}>
             <button
               onClick={() => {
@@ -596,6 +762,107 @@ export default function CalorieTracker() {
           </div>
         )}
       </section>
+
+      {/* Daily Chart Modal */}
+      {showDailyChart && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowDailyChart(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-xl">
+              <h2 className="text-2xl font-bold text-gray-900">Daily Calorie Statistics</h2>
+              <button
+                onClick={() => setShowDailyChart(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {dailyChartData ? (
+                <>
+                  {/* Statistics Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                      <div className="text-sm font-medium text-blue-800 mb-1">Average Daily Calories</div>
+                      <div className="text-3xl font-bold text-blue-900">{dailyChartData.averageCalories}</div>
+                      <div className="text-xs text-blue-600 mt-1">
+                        {dailyChartData.averageCalories > targets.maintenance
+                          ? `${dailyChartData.averageCalories - targets.maintenance} above maintenance`
+                          : `${targets.maintenance - dailyChartData.averageCalories} below maintenance`}
+                      </div>
+                    </div>
+
+                    <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                      <div className="text-sm font-medium text-purple-800 mb-1">Expected Weight Loss</div>
+                      <div className="text-3xl font-bold text-purple-900">
+                        {dailyChartData.expectedWeightLossPerMonth > 0
+                          ? `${dailyChartData.expectedWeightLossPerMonth.toFixed(1)} lbs`
+                          : dailyChartData.expectedWeightLossPerMonth < 0
+                          ? `+${Math.abs(dailyChartData.expectedWeightLossPerMonth).toFixed(1)} lbs`
+                          : '0 lbs'}
+                      </div>
+                      <div className="text-xs text-purple-600 mt-1">
+                        {dailyChartData.expectedWeightLossPerMonth > 0
+                          ? 'per month (loss)'
+                          : dailyChartData.expectedWeightLossPerMonth < 0
+                          ? 'per month (gain)'
+                          : 'per month (maintenance)'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Chart */}
+                  <div className="bg-white border border-gray-200 rounded-lg p-4" style={{ height: '500px' }}>
+                    <Bar data={dailyChartData.chartData} options={dailyChartOptions} />
+                  </div>
+
+                  {/* Legend Explanation */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm text-gray-600">
+                    <p className="font-medium text-gray-900 mb-2">Chart Guide:</p>
+                    <ul className="space-y-1 list-disc list-inside">
+                      <li><strong>Blue bars</strong> show your daily calorie intake</li>
+                      <li><strong>Purple line</strong> shows your 7-day rolling average</li>
+                      <li><strong>Dashed lines</strong> show your calorie goals (maintenance, 1 lb/week, 2 lb/week)</li>
+                      <li>Weight loss calculation: 3,500 calorie deficit = 1 pound lost</li>
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12 text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="64"
+                    height="64"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mx-auto mb-4 opacity-50"
+                  >
+                    <line x1="12" x2="12" y1="20" y2="10" />
+                    <line x1="18" x2="18" y1="20" y2="4" />
+                    <line x1="6" x2="6" y1="20" y2="16" />
+                  </svg>
+                  <p className="text-lg">No data available yet</p>
+                  <p className="text-sm mt-2">Start logging your meals to see daily statistics</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
