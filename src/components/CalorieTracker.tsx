@@ -136,6 +136,7 @@ export default function CalorieTracker() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editCalories, setEditCalories] = useState("");
+  const [importMode, setImportMode] = useState<"replace" | "append">("replace");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dataMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -257,7 +258,7 @@ export default function CalorieTracker() {
     URL.revokeObjectURL(url);
   };
 
-  const importFromCSV = async (file: File) => {
+  const importFromCSV = async (file: File, append: boolean = false) => {
     setImportStatus(null);
     const text = await file.text();
     const rows = parseCsv(text);
@@ -275,7 +276,7 @@ export default function CalorieTracker() {
       throw new Error("CSV header must include: Name, Calories, Time");
     }
 
-    const nextItems: CalorieItem[] = [];
+    const importedItems: CalorieItem[] = [];
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       // Skip totally empty rows.
@@ -295,7 +296,7 @@ export default function CalorieTracker() {
         throw new Error(`Invalid Time value on row ${i + 1}: ${rawTime}`);
       }
 
-      nextItems.push({
+      importedItems.push({
         id: crypto.randomUUID(),
         name: rawName || "Unnamed Item",
         calories: caloriesValue,
@@ -303,10 +304,13 @@ export default function CalorieTracker() {
       });
     }
 
+    // Combine with existing items if appending, otherwise use only imported items
+    const nextItems = append ? [...items, ...importedItems] : importedItems;
+
     // Keep chronological order in storage.
     nextItems.sort((a, b) => a.timestamp - b.timestamp);
     setItems(nextItems);
-    setImportStatus(`Imported ${nextItems.length} item${nextItems.length === 1 ? "" : "s"} from CSV.`);
+    setImportStatus(`Imported ${importedItems.length} item${importedItems.length === 1 ? "" : "s"} from CSV.${append ? " Appended to existing log." : ""}`);
   };
 
   useEffect(() => {
@@ -641,43 +645,56 @@ export default function CalorieTracker() {
             </button>
 
             {isDataMenuOpen && (
-              <div
-                role="menu"
-                aria-label="Import/Export menu"
-                className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden z-10"
-              >
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    exportToCSV();
-                    setIsDataMenuOpen(false);
-                  }}
-                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Export to CSV
-                </button>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    // Import replaces current items (with confirmation if needed)
-                    if (items.length > 0) {
-                      const ok = window.confirm(
-                        "Importing will replace your current log. Continue?"
-                      );
-                      if (!ok) {
-                        setIsDataMenuOpen(false);
-                        return;
-                      }
-                    }
-                    fileInputRef.current?.click();
-                    setIsDataMenuOpen(false);
-                  }}
-                  className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Import from CSV
-                </button>
-              </div>
-            )}
+             <div
+               role="menu"
+               aria-label="Import/Export menu"
+               className="absolute right-0 mt-2 w-56 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden z-10"
+             >
+               <button
+                 role="menuitem"
+                 onClick={() => {
+                   exportToCSV();
+                   setIsDataMenuOpen(false);
+                 }}
+                 className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+               >
+                 Export to CSV
+               </button>
+               <button
+                 role="menuitem"
+                 onClick={() => {
+                   // Import replaces current items (with confirmation if needed)
+                   if (items.length > 0) {
+                     const ok = window.confirm(
+                       "Importing will replace your current log. Continue?"
+                     );
+                     if (!ok) {
+                       setIsDataMenuOpen(false);
+                       return;
+                     }
+                   }
+                   setImportMode("replace");
+                   fileInputRef.current?.click();
+                   setIsDataMenuOpen(false);
+                 }}
+                 className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+               >
+                 Import from CSV (Replace)
+               </button>
+               <button
+                 role="menuitem"
+                 onClick={() => {
+                   // Import appends to current items
+                   setImportMode("append");
+                   fileInputRef.current?.click();
+                   setIsDataMenuOpen(false);
+                 }}
+                 className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50"
+               >
+                 Import from CSV (Append)
+               </button>
+             </div>
+           )}
 
             <input
               ref={fileInputRef}
@@ -690,7 +707,7 @@ export default function CalorieTracker() {
                 e.target.value = "";
                 if (!file) return;
                 try {
-                  await importFromCSV(file);
+                  await importFromCSV(file, importMode === "append");
                 } catch (err) {
                   const message = err instanceof Error ? err.message : "Failed to import CSV.";
                   setImportStatus(message);
