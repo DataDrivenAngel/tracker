@@ -133,6 +133,39 @@ export default function CalorieTracker() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dataMenuRef = useRef<HTMLDivElement | null>(null);
 
+  // Load persisted state from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const storedItems = sessionStorage.getItem('calorieTracker_items');
+      if (storedItems) {
+        const parsedItems = JSON.parse(storedItems);
+        if (Array.isArray(parsedItems)) {
+          setItems(parsedItems);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load items from sessionStorage:', error);
+    }
+
+    try {
+      const storedWeight = sessionStorage.getItem('calorieTracker_weight');
+      if (storedWeight) {
+        setWeight(storedWeight);
+      }
+    } catch (error) {
+      console.warn('Failed to load weight from sessionStorage:', error);
+    }
+
+    try {
+      const storedTarget = sessionStorage.getItem('calorieTracker_selectedTarget');
+      if (storedTarget && ['maintenance', 'oneLb', 'twoLb'].includes(storedTarget)) {
+        setSelectedTarget(storedTarget as keyof Targets);
+      }
+    } catch (error) {
+      console.warn('Failed to load selectedTarget from sessionStorage:', error);
+    }
+  }, []);
+
   const targets = useMemo((): Targets => {
     const w = parseFloat(weight) || 0;
     // Sedentary maintenance: weight * 13-15 (using 14 as average)
@@ -261,12 +294,36 @@ export default function CalorieTracker() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("pointerdown", onPointerDown);
     return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("pointerdown", onPointerDown);
-    };
-  }, [isDataMenuOpen]);
-
-  const chartData = useMemo(() => {
+          window.removeEventListener("keydown", onKeyDown);
+          window.removeEventListener("pointerdown", onPointerDown);
+        };
+      }, [isDataMenuOpen]);
+      // Save items to sessionStorage whenever items change
+      useEffect(() => {
+        try {
+          sessionStorage.setItem('calorieTracker_items', JSON.stringify(items));
+        } catch (error) {
+          console.warn('Failed to save items to sessionStorage:', error);
+        }
+      }, [items]);
+      // Save weight to sessionStorage whenever weight changes
+      useEffect(() => {
+        try {
+          sessionStorage.setItem('calorieTracker_weight', weight);
+        } catch (error) {
+          console.warn('Failed to save weight to sessionStorage:', error);
+        }
+      }, [weight]);
+      // Save selectedTarget to sessionStorage whenever selectedTarget changes
+      useEffect(() => {
+        try {
+          sessionStorage.setItem('calorieTracker_selectedTarget', selectedTarget);
+        } catch (error) {
+          console.warn('Failed to save selectedTarget to sessionStorage:', error);
+        }
+      }, [selectedTarget]);
+    
+      const chartData = useMemo(() => {
     const sortedItems = [...items].sort((a, b) => a.timestamp - b.timestamp);
     let cumulative = 0;
     const dataPoints = sortedItems.map((item) => {
