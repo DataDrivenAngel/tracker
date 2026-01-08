@@ -136,6 +136,8 @@ export default function CalorieTracker() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editCalories, setEditCalories] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editTime, setEditTime] = useState("");
   const [importMode, setImportMode] = useState<"replace" | "append">("replace");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const dataMenuRef = useRef<HTMLDivElement | null>(null);
@@ -210,27 +212,36 @@ export default function CalorieTracker() {
     setEditingId(item.id);
     setEditName(item.name);
     setEditCalories(item.calories.toString());
+    const date = new Date(item.timestamp);
+    setEditDate(date.toISOString().split('T')[0]);
+    setEditTime(date.toTimeString().slice(0, 5));
   };
 
   const saveEdit = (id: string) => {
     if (!editCalories.trim()) return;
 
+    const newTimestamp = new Date(editDate + 'T' + editTime).getTime();
+
     setItems((prev) =>
       prev.map((item) =>
         item.id === id
-          ? { ...item, name: editName || "Unnamed Item", calories: parseInt(editCalories) }
+          ? { ...item, name: editName || "Unnamed Item", calories: parseInt(editCalories), timestamp: newTimestamp }
           : item
       )
     );
     setEditingId(null);
     setEditName("");
     setEditCalories("");
+    setEditDate("");
+    setEditTime("");
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditName("");
     setEditCalories("");
+    setEditDate("");
+    setEditTime("");
   };
 
   const totalCalories = items.reduce((sum, item) => sum + item.calories, 0);
@@ -894,7 +905,7 @@ export default function CalorieTracker() {
                 {editingId === item.id ? (
                   <>
                     <div className="flex-1 mr-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <input
                           type="text"
                           value={editName}
@@ -910,8 +921,21 @@ export default function CalorieTracker() {
                           className="px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                           required
                         />
+                        <div className="flex flex-col gap-2">
+                          <input
+                            type="date"
+                            value={editDate}
+                            onChange={(e) => setEditDate(e.target.value)}
+                            className="px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          />
+                          <input
+                            type="time"
+                            value={editTime}
+                            onChange={(e) => setEditTime(e.target.value)}
+                            className="px-3 py-2 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          />
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
