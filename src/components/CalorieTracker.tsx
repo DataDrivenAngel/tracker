@@ -12,6 +12,7 @@ import {
   Tooltip,
   Legend,
   Filler,
+  BarController,
 } from "chart.js";
 import { Line, Bar, Chart } from "react-chartjs-2";
 
@@ -21,6 +22,7 @@ ChartJS.register(
   PointElement,
   LineElement,
   BarElement,
+  BarController,
   Title,
   Tooltip,
   Legend,
